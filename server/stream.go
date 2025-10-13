@@ -5325,7 +5325,7 @@ var (
 )
 
 // processJetStreamMsg is where we try to actually process the stream msg.
-func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, lseq uint64, ts int64, mt *msgTrace, sourced bool, needLock bool) (retErr error) {
+func (mset *stream) processJetStreamMsg(subject, reply string, _hdr, msg []byte, lseq uint64, ts int64, mt *msgTrace, sourced bool, needLock bool) (retErr error) {
 	if mt != nil {
 		// Only the leader/standalone will have mt!=nil. On exit, send the
 		// message trace event.
@@ -5377,7 +5377,7 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 	maxMsgSize := int(mset.cfg.MaxMsgSize)
 	numConsumers := len(mset.consumers)
 	interestRetention := mset.cfg.Retention == InterestPolicy
-	allowMsgCounter, allowMsgSchedules := mset.cfg.AllowMsgCounter, mset.cfg.AllowMsgSchedules
+	allowMsgCounter, _ := mset.cfg.AllowMsgCounter, mset.cfg.AllowMsgSchedules
 	// Snapshot if we are the leader and if we can respond.
 	isLeader, isSealed := mset.isLeaderNodeState(), mset.cfg.Sealed
 	isClustered := mset.isClustered()
@@ -5389,10 +5389,11 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 
 	var batchId string
 	var batchSeq uint64
-	if len(hdr) > 0 {
+	idx := indexJsHdr(_hdr)
+	if len(_hdr) > 0 {
 		// Populate batch details.
-		if batchId = getBatchId(hdr); batchId != _EMPTY_ {
-			batchSeq, _ = getBatchSequence(hdr)
+		if batchId = bytesToString(idx.get(JSBatchId, _hdr)); batchId != _EMPTY_ {
+			batchSeq, _ = getBatchSequence(_hdr)
 			// Disable consistency checking if this was already done
 			// earlier as part of the batch consistency check.
 			canConsistencyCheck = traceOnly
@@ -5450,81 +5451,82 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 
 	// If we have received this message across an account we may have request information attached.
 	// For now remove. TODO(dlc) - Should this be opt-in or opt-out?
-	if len(hdr) > 0 {
-		hdr = removeHeaderIfPresent(hdr, ClientInfoHdr)
-	}
+	//if len(hdr) > 0 {
+	//	hdr = removeHeaderIfPresent(hdr, ClientInfoHdr)
+	//}
 
 	// Process additional msg headers if still present.
 	var msgId string
 	var incr *big.Int
 	var rollupSub, rollupAll bool
 
-	if len(hdr) > 0 {
+	if len(_hdr) > 0 {
 		// Certain checks have already been performed if in clustered mode, so only check if not.
 		// Note, for cluster mode but with message tracing (without message delivery), we need
 		// to do this check here since it was not done in processClusteredInboundMsg().
 		if canConsistencyCheck {
 			// Counter increments.
 			// Only supported on counter streams, and payload must be empty (if not coming from a source).
-			var ok bool
-			if incr, ok = getMessageIncr(hdr); !ok {
-				apiErr := NewJSMessageIncrInvalidError()
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = apiErr
-					b, _ := json.Marshal(resp)
-					outq.sendMsg(reply, b)
-				}
-				return apiErr
-			} else if incr != nil && !sourced {
-				// Only do checks if the message isn't sourced. Otherwise, we need to store verbatim.
-				if !allowMsgCounter {
-					apiErr := NewJSMessageIncrDisabledError()
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = apiErr
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return apiErr
-				} else if len(msg) > 0 {
-					apiErr := NewJSMessageIncrPayloadError()
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = apiErr
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return apiErr
-				} else {
-					// Check for incompatible headers.
-					var doErr bool
-					if getRollup(hdr) != _EMPTY_ ||
-						getExpectedStream(hdr) != _EMPTY_ ||
-						getExpectedLastMsgId(hdr) != _EMPTY_ ||
-						getExpectedLastSeqPerSubjectForSubject(hdr) != _EMPTY_ {
-						doErr = true
-					} else if _, ok := getExpectedLastSeq(hdr); ok {
-						doErr = true
-					} else if _, ok := getExpectedLastSeqPerSubject(hdr); ok {
-						doErr = true
-					}
-
-					if doErr {
-						apiErr := NewJSMessageIncrInvalidError()
-						if canRespond {
-							resp.PubAck = &PubAck{Stream: name}
-							resp.Error = apiErr
-							b, _ := json.Marshal(resp)
-							outq.sendMsg(reply, b)
-						}
-						return apiErr
-					}
-				}
-			}
+			//var ok bool
+			idx.get(JSMsgId, _hdr)
+			//if incr, ok = getMessageIncr(hdr); !ok {
+			//	apiErr := NewJSMessageIncrInvalidError()
+			//	if canRespond {
+			//		resp.PubAck = &PubAck{Stream: name}
+			//		resp.Error = apiErr
+			//		b, _ := json.Marshal(resp)
+			//		outq.sendMsg(reply, b)
+			//	}
+			//	return apiErr
+			//} else if incr != nil && !sourced {
+			//	// Only do checks if the message isn't sourced. Otherwise, we need to store verbatim.
+			//	if !allowMsgCounter {
+			//		apiErr := NewJSMessageIncrDisabledError()
+			//		if canRespond {
+			//			resp.PubAck = &PubAck{Stream: name}
+			//			resp.Error = apiErr
+			//			b, _ := json.Marshal(resp)
+			//			outq.sendMsg(reply, b)
+			//		}
+			//		return apiErr
+			//	} else if len(msg) > 0 {
+			//		apiErr := NewJSMessageIncrPayloadError()
+			//		if canRespond {
+			//			resp.PubAck = &PubAck{Stream: name}
+			//			resp.Error = apiErr
+			//			b, _ := json.Marshal(resp)
+			//			outq.sendMsg(reply, b)
+			//		}
+			//		return apiErr
+			//	} else {
+			//		// Check for incompatible headers.
+			//		var doErr bool
+			//		if getRollup(hdr) != _EMPTY_ ||
+			//			getExpectedStream(hdr) != _EMPTY_ ||
+			//			getExpectedLastMsgId(hdr) != _EMPTY_ ||
+			//			getExpectedLastSeqPerSubjectForSubject(hdr) != _EMPTY_ {
+			//			doErr = true
+			//		} else if _, ok := getExpectedLastSeq(hdr); ok {
+			//			doErr = true
+			//		} else if _, ok := getExpectedLastSeqPerSubject(hdr); ok {
+			//			doErr = true
+			//		}
+			//
+			//		if doErr {
+			//			apiErr := NewJSMessageIncrInvalidError()
+			//			if canRespond {
+			//				resp.PubAck = &PubAck{Stream: name}
+			//				resp.Error = apiErr
+			//				b, _ := json.Marshal(resp)
+			//				outq.sendMsg(reply, b)
+			//			}
+			//			return apiErr
+			//		}
+			//	}
+			//}
 
 			// Expected stream.
-			if sname := getExpectedStream(hdr); sname != _EMPTY_ && sname != name {
+			if sname := bytesToString(idx.get(JSExpectedStream, _hdr)); sname != _EMPTY_ && sname != name {
 				if canRespond {
 					resp.PubAck = &PubAck{Stream: name}
 					resp.Error = NewJSStreamNotMatchError()
@@ -5537,152 +5539,157 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 			// TTL'd messages are rejected entirely if TTLs are not enabled on the stream.
 			// Shouldn't happen in clustered mode since we should have already caught this
 			// in processClusteredInboundMsg, but needed here for non-clustered etc.
-			if ttl, _ := getMessageTTL(hdr); !sourced && ttl != 0 && !mset.cfg.AllowMsgTTL {
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = NewJSMessageTTLDisabledError()
-					b, _ := json.Marshal(resp)
-					outq.sendMsg(reply, b)
-				}
-				return errMsgTTLDisabled
-			}
+			idx.get(JSMessageTTL, _hdr)
+			//if ttl, _ := getMessageTTL(hdr); !sourced && ttl != 0 && !mset.cfg.AllowMsgTTL {
+			//	if canRespond {
+			//		resp.PubAck = &PubAck{Stream: name}
+			//		resp.Error = NewJSMessageTTLDisabledError()
+			//		b, _ := json.Marshal(resp)
+			//		outq.sendMsg(reply, b)
+			//	}
+			//	return errMsgTTLDisabled
+			//}
 
 			// Expected last sequence per subject.
-			if seq, exists := getExpectedLastSeqPerSubject(hdr); exists {
-				// Allow override of the subject used for the check.
-				seqSubj := subject
-				if optSubj := getExpectedLastSeqPerSubjectForSubject(hdr); optSubj != _EMPTY_ {
-					seqSubj = optSubj
-				}
-
-				// TODO(dlc) - We could make a new store func that does this all in one.
-				var smv StoreMsg
-				var fseq uint64
-				sm, err := store.LoadLastMsg(seqSubj, &smv)
-				if sm != nil {
-					fseq = sm.seq
-				}
-				if err == ErrStoreMsgNotFound && seq == 0 {
-					fseq, err = 0, nil
-				}
-				if err != nil || fseq != seq {
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = NewJSStreamWrongLastSequenceError(fseq)
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return fmt.Errorf("last sequence by subject mismatch: %d vs %d", seq, fseq)
-				}
-			} else if getExpectedLastSeqPerSubjectForSubject(hdr) != _EMPTY_ {
-				apiErr := NewJSStreamExpectedLastSeqPerSubjectInvalidError()
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = apiErr
-					b, _ := json.Marshal(resp)
-					outq.sendMsg(reply, b)
-				}
-				return apiErr
-			}
+			idx.get(JSExpectedLastSubjSeq, _hdr)
+			idx.get(JSExpectedLastSubjSeqSubj, _hdr)
+			//if seq, exists := getExpectedLastSeqPerSubject(hdr); exists {
+			//	// Allow override of the subject used for the check.
+			//	seqSubj := subject
+			//	if optSubj := getExpectedLastSeqPerSubjectForSubject(hdr); optSubj != _EMPTY_ {
+			//		seqSubj = optSubj
+			//	}
+			//
+			//	// TODO(dlc) - We could make a new store func that does this all in one.
+			//	var smv StoreMsg
+			//	var fseq uint64
+			//	sm, err := store.LoadLastMsg(seqSubj, &smv)
+			//	if sm != nil {
+			//		fseq = sm.seq
+			//	}
+			//	if err == ErrStoreMsgNotFound && seq == 0 {
+			//		fseq, err = 0, nil
+			//	}
+			//	if err != nil || fseq != seq {
+			//		if canRespond {
+			//			resp.PubAck = &PubAck{Stream: name}
+			//			resp.Error = NewJSStreamWrongLastSequenceError(fseq)
+			//			b, _ := json.Marshal(resp)
+			//			outq.sendMsg(reply, b)
+			//		}
+			//		return fmt.Errorf("last sequence by subject mismatch: %d vs %d", seq, fseq)
+			//	}
+			//} else if getExpectedLastSeqPerSubjectForSubject(hdr) != _EMPTY_ {
+			//	apiErr := NewJSStreamExpectedLastSeqPerSubjectInvalidError()
+			//	if canRespond {
+			//		resp.PubAck = &PubAck{Stream: name}
+			//		resp.Error = apiErr
+			//		b, _ := json.Marshal(resp)
+			//		outq.sendMsg(reply, b)
+			//	}
+			//	return apiErr
+			//}
 
 			// Expected last sequence.
-			if seq, exists := getExpectedLastSeq(hdr); exists && seq != mset.lseq {
-				mlseq := mset.lseq
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = NewJSStreamWrongLastSequenceError(mlseq)
-					b, _ := json.Marshal(resp)
-					outq.sendMsg(reply, b)
-				}
-				return fmt.Errorf("last sequence mismatch: %d vs %d", seq, mlseq)
-			}
+			idx.get(JSExpectedLastSeq, _hdr)
+			//if seq, exists := getExpectedLastSeq(hdr); exists && seq != mset.lseq {
+			//	mlseq := mset.lseq
+			//	if canRespond {
+			//		resp.PubAck = &PubAck{Stream: name}
+			//		resp.Error = NewJSStreamWrongLastSequenceError(mlseq)
+			//		b, _ := json.Marshal(resp)
+			//		outq.sendMsg(reply, b)
+			//	}
+			//	return fmt.Errorf("last sequence mismatch: %d vs %d", seq, mlseq)
+			//}
 
 			// Message scheduling.
-			if schedule, ok := getMessageSchedule(hdr); !ok {
-				apiErr := NewJSMessageSchedulesPatternInvalidError()
-				if !allowMsgSchedules {
-					apiErr = NewJSMessageSchedulesDisabledError()
-				}
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = apiErr
-					b, _ := json.Marshal(resp)
-					outq.sendMsg(reply, b)
-				}
-				return apiErr
-			} else if !schedule.IsZero() {
-				if !allowMsgSchedules {
-					apiErr := NewJSMessageSchedulesDisabledError()
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = apiErr
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return apiErr
-				} else if scheduleTtl, ok := getMessageScheduleTTL(hdr); !ok {
-					apiErr := NewJSMessageSchedulesTTLInvalidError()
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = apiErr
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return apiErr
-				} else if scheduleTtl != _EMPTY_ && !mset.cfg.AllowMsgTTL {
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = NewJSMessageTTLDisabledError()
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return errMsgTTLDisabled
-				} else if scheduleTarget := getMessageScheduleTarget(hdr); scheduleTarget == _EMPTY_ ||
-					!IsValidPublishSubject(scheduleTarget) || SubjectsCollide(scheduleTarget, subject) {
-					apiErr := NewJSMessageSchedulesTargetInvalidError()
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = apiErr
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return apiErr
-				} else {
-					match := slices.ContainsFunc(mset.cfg.Subjects, func(subj string) bool {
-						return SubjectsCollide(subj, scheduleTarget)
-					})
-					if !match {
-						apiErr := NewJSMessageSchedulesTargetInvalidError()
-						if canRespond {
-							resp.PubAck = &PubAck{Stream: name}
-							resp.Error = apiErr
-							b, _ := json.Marshal(resp)
-							outq.sendMsg(reply, b)
-						}
-						return apiErr
-					}
-
-					// Add a rollup sub header if it doesn't already exist.
-					// Otherwise, it must exist already as a rollup on the subject.
-					if rollup := getRollup(hdr); rollup == _EMPTY_ {
-						hdr = genHeader(hdr, JSMsgRollup, JSMsgRollupSubject)
-					} else if rollup != JSMsgRollupSubject {
-						apiErr := NewJSMessageSchedulesRollupInvalidError()
-						if canRespond {
-							resp.PubAck = &PubAck{Stream: name}
-							resp.Error = apiErr
-							b, _ := json.Marshal(resp)
-							outq.sendMsg(reply, b)
-						}
-						return apiErr
-					}
-				}
-			}
+			idx.get(JSSchedulePattern, _hdr)
+			//if schedule, ok := getMessageSchedule(hdr); !ok {
+			//	apiErr := NewJSMessageSchedulesPatternInvalidError()
+			//	if !allowMsgSchedules {
+			//		apiErr = NewJSMessageSchedulesDisabledError()
+			//	}
+			//	if canRespond {
+			//		resp.PubAck = &PubAck{Stream: name}
+			//		resp.Error = apiErr
+			//		b, _ := json.Marshal(resp)
+			//		outq.sendMsg(reply, b)
+			//	}
+			//	return apiErr
+			//} else if !schedule.IsZero() {
+			//	if !allowMsgSchedules {
+			//		apiErr := NewJSMessageSchedulesDisabledError()
+			//		if canRespond {
+			//			resp.PubAck = &PubAck{Stream: name}
+			//			resp.Error = apiErr
+			//			b, _ := json.Marshal(resp)
+			//			outq.sendMsg(reply, b)
+			//		}
+			//		return apiErr
+			//	} else if scheduleTtl, ok := getMessageScheduleTTL(hdr); !ok {
+			//		apiErr := NewJSMessageSchedulesTTLInvalidError()
+			//		if canRespond {
+			//			resp.PubAck = &PubAck{Stream: name}
+			//			resp.Error = apiErr
+			//			b, _ := json.Marshal(resp)
+			//			outq.sendMsg(reply, b)
+			//		}
+			//		return apiErr
+			//	} else if scheduleTtl != _EMPTY_ && !mset.cfg.AllowMsgTTL {
+			//		if canRespond {
+			//			resp.PubAck = &PubAck{Stream: name}
+			//			resp.Error = NewJSMessageTTLDisabledError()
+			//			b, _ := json.Marshal(resp)
+			//			outq.sendMsg(reply, b)
+			//		}
+			//		return errMsgTTLDisabled
+			//	} else if scheduleTarget := getMessageScheduleTarget(hdr); scheduleTarget == _EMPTY_ ||
+			//		!IsValidPublishSubject(scheduleTarget) || SubjectsCollide(scheduleTarget, subject) {
+			//		apiErr := NewJSMessageSchedulesTargetInvalidError()
+			//		if canRespond {
+			//			resp.PubAck = &PubAck{Stream: name}
+			//			resp.Error = apiErr
+			//			b, _ := json.Marshal(resp)
+			//			outq.sendMsg(reply, b)
+			//		}
+			//		return apiErr
+			//	} else {
+			//		match := slices.ContainsFunc(mset.cfg.Subjects, func(subj string) bool {
+			//			return SubjectsCollide(subj, scheduleTarget)
+			//		})
+			//		if !match {
+			//			apiErr := NewJSMessageSchedulesTargetInvalidError()
+			//			if canRespond {
+			//				resp.PubAck = &PubAck{Stream: name}
+			//				resp.Error = apiErr
+			//				b, _ := json.Marshal(resp)
+			//				outq.sendMsg(reply, b)
+			//			}
+			//			return apiErr
+			//		}
+			//
+			//		// Add a rollup sub header if it doesn't already exist.
+			//		// Otherwise, it must exist already as a rollup on the subject.
+			//		if rollup := getRollup(hdr); rollup == _EMPTY_ {
+			//			hdr = genHeader(hdr, JSMsgRollup, JSMsgRollupSubject)
+			//		} else if rollup != JSMsgRollupSubject {
+			//			apiErr := NewJSMessageSchedulesRollupInvalidError()
+			//			if canRespond {
+			//				resp.PubAck = &PubAck{Stream: name}
+			//				resp.Error = apiErr
+			//				b, _ := json.Marshal(resp)
+			//				outq.sendMsg(reply, b)
+			//			}
+			//			return apiErr
+			//		}
+			//	}
+			//}
 		}
 
 		// Dedupe detection. This is done at the cluster level for dedupe detection above the
 		// lower layers. But we still need to pull out the msgId.
-		if msgId = getMsgId(hdr); msgId != _EMPTY_ {
+		if msgId = bytesToString(idx.get(JSMsgId, _hdr)); msgId != _EMPTY_ {
 			// Do real check only if not clustered or traceOnly flag is set.
 			if canConsistencyCheck {
 				var seq uint64
@@ -5704,7 +5711,7 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 		}
 
 		// Expected last msgId.
-		if lmsgId := getExpectedLastMsgId(hdr); lmsgId != _EMPTY_ {
+		if lmsgId := bytesToString(idx.get(JSExpectedLastMsgId, _hdr)); lmsgId != _EMPTY_ {
 			if lmsgId != mset.lmsgId {
 				last := mset.lmsgId
 				bumpCLFS()
@@ -5718,7 +5725,7 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 			}
 		}
 		// Check for any rollups.
-		if rollup := getRollup(hdr); rollup != _EMPTY_ {
+		if rollup := bytesToString(idx.get(JSMsgRollup, _hdr)); rollup != _EMPTY_ {
 			if canConsistencyCheck && (!mset.cfg.AllowRollup || mset.cfg.DenyPurge) {
 				err := errors.New("rollup not permitted")
 				if canRespond {
@@ -5769,115 +5776,115 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 
 	// Apply increment for counter.
 	// But only if it's allowed for this stream. This can happen when we store verbatim for a sourced stream.
-	if canConsistencyCheck && incr != nil && allowMsgCounter {
-		var initial big.Int
-		var sources CounterSources
-		var smv StoreMsg
-		sm, err := store.LoadLastMsg(subject, &smv)
-		if err == nil && sm != nil {
-			var val CounterValue
-			// Return an error if the counter is broken somehow.
-			if json.Unmarshal(sm.msg, &val) != nil {
-				apiErr := NewJSMessageCounterBrokenError()
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = apiErr
-					b, _ := json.Marshal(resp)
-					outq.sendMsg(reply, b)
-				}
-				return apiErr
-			}
-			if ncs := sliceHeader(JSMessageCounterSources, sm.hdr); len(ncs) > 0 {
-				if err := json.Unmarshal(ncs, &sources); err != nil {
-					apiErr := NewJSMessageCounterBrokenError()
-					if canRespond {
-						resp.PubAck = &PubAck{Stream: name}
-						resp.Error = apiErr
-						b, _ := json.Marshal(resp)
-						outq.sendMsg(reply, b)
-					}
-					return apiErr
-				}
-			}
-			initial.SetString(val.Value, 10)
-		}
-		srchdr := sliceHeader(JSStreamSource, hdr)
-		if len(srchdr) > 0 {
-			// This is a sourced message, so we can't apply Nats-Incr but
-			// instead should just update the source count header.
-			fields := strings.Split(string(srchdr), " ")
-			origStream := fields[0]
-			origSubj := subject
-			if len(fields) >= 5 {
-				origSubj = fields[4]
-			}
-			var val CounterValue
-			if json.Unmarshal(msg, &val) != nil {
-				apiErr := NewJSMessageCounterBrokenError()
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = apiErr
-					b, _ := json.Marshal(resp)
-					outq.sendMsg(reply, b)
-				}
-				return apiErr
-			}
-			var sourced big.Int
-			sourced.SetString(val.Value, 10)
-			if sources == nil {
-				sources = map[string]map[string]string{}
-			}
-			if _, ok := sources[origStream]; !ok {
-				sources[origStream] = map[string]string{}
-			}
-			prevVal := sources[origStream][origSubj]
-			sources[origStream][origSubj] = sourced.String()
-			// We will also replace the Nats-Incr header with the diff
-			// between our last value from this source and this one, so
-			// that the arithmetic is always correct.
-			var previous big.Int
-			previous.SetString(prevVal, 10)
-			incr.Sub(&sourced, &previous)
-			hdr = setHeader(JSMessageIncr, incr.String(), hdr)
-		}
-		// Now make the change.
-		initial.Add(&initial, incr)
-		// Generate the new payload.
-		var _msg [128]byte
-		msg = fmt.Appendf(_msg[:0], "{%q:%q}", "val", initial.String())
-		// Write the updated source count headers.
-		if len(sources) > 0 {
-			nhdr, err := json.Marshal(sources)
-			if err != nil {
-				if canRespond {
-					resp.PubAck = &PubAck{Stream: name}
-					resp.Error = NewJSMessageCounterBrokenError()
-					response, _ = json.Marshal(resp)
-					outq.sendMsg(reply, response)
-				}
-				return err
-			}
-			hdr = setHeader(JSMessageCounterSources, string(nhdr), hdr)
-		}
-
-		// Check to see if we are over the max msg size.
-		// Subtract to prevent against overflows.
-		maxPayload := int64(mset.srv.getOpts().MaxPayload)
-		hdrLen, msgLen := int64(len(hdr)), int64(len(msg))
-		if hdrLen > maxPayload || msgLen > maxPayload-hdrLen {
-			if canRespond {
-				resp.PubAck = &PubAck{Stream: name}
-				resp.Error = NewJSStreamMessageExceedsMaximumError()
-				response, _ = json.Marshal(resp)
-				outq.sendMsg(reply, response)
-			}
-			return ErrMaxPayload
-		}
-	}
+	//if canConsistencyCheck && incr != nil && allowMsgCounter {
+	//	var initial big.Int
+	//	var sources CounterSources
+	//	var smv StoreMsg
+	//	sm, err := store.LoadLastMsg(subject, &smv)
+	//	if err == nil && sm != nil {
+	//		var val CounterValue
+	//		// Return an error if the counter is broken somehow.
+	//		if json.Unmarshal(sm.msg, &val) != nil {
+	//			apiErr := NewJSMessageCounterBrokenError()
+	//			if canRespond {
+	//				resp.PubAck = &PubAck{Stream: name}
+	//				resp.Error = apiErr
+	//				b, _ := json.Marshal(resp)
+	//				outq.sendMsg(reply, b)
+	//			}
+	//			return apiErr
+	//		}
+	//		if ncs := sliceHeader(JSMessageCounterSources, sm.hdr); len(ncs) > 0 {
+	//			if err := json.Unmarshal(ncs, &sources); err != nil {
+	//				apiErr := NewJSMessageCounterBrokenError()
+	//				if canRespond {
+	//					resp.PubAck = &PubAck{Stream: name}
+	//					resp.Error = apiErr
+	//					b, _ := json.Marshal(resp)
+	//					outq.sendMsg(reply, b)
+	//				}
+	//				return apiErr
+	//			}
+	//		}
+	//		initial.SetString(val.Value, 10)
+	//	}
+	//	srchdr := sliceHeader(JSStreamSource, hdr)
+	//	if len(srchdr) > 0 {
+	//		// This is a sourced message, so we can't apply Nats-Incr but
+	//		// instead should just update the source count header.
+	//		fields := strings.Split(string(srchdr), " ")
+	//		origStream := fields[0]
+	//		origSubj := subject
+	//		if len(fields) >= 5 {
+	//			origSubj = fields[4]
+	//		}
+	//		var val CounterValue
+	//		if json.Unmarshal(msg, &val) != nil {
+	//			apiErr := NewJSMessageCounterBrokenError()
+	//			if canRespond {
+	//				resp.PubAck = &PubAck{Stream: name}
+	//				resp.Error = apiErr
+	//				b, _ := json.Marshal(resp)
+	//				outq.sendMsg(reply, b)
+	//			}
+	//			return apiErr
+	//		}
+	//		var sourced big.Int
+	//		sourced.SetString(val.Value, 10)
+	//		if sources == nil {
+	//			sources = map[string]map[string]string{}
+	//		}
+	//		if _, ok := sources[origStream]; !ok {
+	//			sources[origStream] = map[string]string{}
+	//		}
+	//		prevVal := sources[origStream][origSubj]
+	//		sources[origStream][origSubj] = sourced.String()
+	//		// We will also replace the Nats-Incr header with the diff
+	//		// between our last value from this source and this one, so
+	//		// that the arithmetic is always correct.
+	//		var previous big.Int
+	//		previous.SetString(prevVal, 10)
+	//		incr.Sub(&sourced, &previous)
+	//		hdr = setHeader(JSMessageIncr, incr.String(), hdr)
+	//	}
+	//	// Now make the change.
+	//	initial.Add(&initial, incr)
+	//	// Generate the new payload.
+	//	var _msg [128]byte
+	//	msg = fmt.Appendf(_msg[:0], "{%q:%q}", "val", initial.String())
+	//	// Write the updated source count headers.
+	//	if len(sources) > 0 {
+	//		nhdr, err := json.Marshal(sources)
+	//		if err != nil {
+	//			if canRespond {
+	//				resp.PubAck = &PubAck{Stream: name}
+	//				resp.Error = NewJSMessageCounterBrokenError()
+	//				response, _ = json.Marshal(resp)
+	//				outq.sendMsg(reply, response)
+	//			}
+	//			return err
+	//		}
+	//		hdr = setHeader(JSMessageCounterSources, string(nhdr), hdr)
+	//	}
+	//
+	//	// Check to see if we are over the max msg size.
+	//	// Subtract to prevent against overflows.
+	//	maxPayload := int64(mset.srv.getOpts().MaxPayload)
+	//	hdrLen, msgLen := int64(len(hdr)), int64(len(msg))
+	//	if hdrLen > maxPayload || msgLen > maxPayload-hdrLen {
+	//		if canRespond {
+	//			resp.PubAck = &PubAck{Stream: name}
+	//			resp.Error = NewJSStreamMessageExceedsMaximumError()
+	//			response, _ = json.Marshal(resp)
+	//			outq.sendMsg(reply, response)
+	//		}
+	//		return ErrMaxPayload
+	//	}
+	//}
 
 	// Check to see if we are over the max msg size.
 	// Subtract to prevent against overflows.
-	if canConsistencyCheck && maxMsgSize >= 0 && (len(hdr) > maxMsgSize || len(msg) > maxMsgSize-len(hdr)) {
+	if canConsistencyCheck && maxMsgSize >= 0 && (len(_hdr) > maxMsgSize || len(msg) > maxMsgSize-len(_hdr)) {
 		if canRespond {
 			resp.PubAck = &PubAck{Stream: name}
 			resp.Error = NewJSStreamMessageExceedsMaximumError()
@@ -5887,7 +5894,7 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 		return ErrMaxPayload
 	}
 
-	if canConsistencyCheck && len(hdr) > math.MaxUint16 {
+	if canConsistencyCheck && len(_hdr) > math.MaxUint16 {
 		if canRespond {
 			resp.PubAck = &PubAck{Stream: name}
 			resp.Error = NewJSStreamHeaderExceedsMaximumError()
@@ -5983,7 +5990,7 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 	// If clustered this was already checked and we do not want to check here and possibly introduce skew.
 	// Don't error and log if we're tracing when clustered.
 	if !isClustered {
-		if exceeded, err := jsa.wouldExceedLimits(stype, tierName, mset.cfg.Replicas, subject, hdr, msg); exceeded {
+		if exceeded, err := jsa.wouldExceedLimits(stype, tierName, mset.cfg.Replicas, subject, _hdr, msg); exceeded {
 			if err == nil {
 				err = NewJSAccountResourcesExceededError()
 			}
@@ -5999,31 +6006,33 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 	}
 
 	// Find the message TTL if any.
-	ttl, err := getMessageTTL(hdr)
-	if err != nil {
-		if canRespond {
-			resp.PubAck = &PubAck{Stream: name}
-			resp.Error = NewJSMessageTTLInvalidError()
-			response, _ = json.Marshal(resp)
-			outq.send(newJSPubMsg(reply, _EMPTY_, _EMPTY_, nil, response, nil, 0))
-		}
-		return err
-	}
+	var ttl int64
+	idx.get(JSMessageTTL, _hdr)
+	//ttl, err := getMessageTTL(hdr)
+	//if err != nil {
+	//	if canRespond {
+	//		resp.PubAck = &PubAck{Stream: name}
+	//		resp.Error = NewJSMessageTTLInvalidError()
+	//		response, _ = json.Marshal(resp)
+	//		outq.send(newJSPubMsg(reply, _EMPTY_, _EMPTY_, nil, response, nil, 0))
+	//	}
+	//	return err
+	//}
 
 	// If subject delete markers are used, ensure message TTL is that at minimum.
 	// Otherwise, subject delete markers could be missed if one already exists for this subject.
 	// MaxMsgsPer=1 is an exception, because we'll only ever have one message.
-	if ttl > 0 && mset.cfg.SubjectDeleteMarkerTTL > 0 && mset.cfg.MaxMsgsPer != 1 {
-		if minTtl := int64(mset.cfg.SubjectDeleteMarkerTTL.Seconds()); ttl < minTtl {
-			ttl = minTtl
-			hdr = removeHeaderIfPresent(hdr, JSMessageTTL)
-			hdr = genHeader(hdr, JSMessageTTL, strconv.FormatInt(ttl, 10))
-		}
-	}
+	//if ttl > 0 && mset.cfg.SubjectDeleteMarkerTTL > 0 && mset.cfg.MaxMsgsPer != 1 {
+	//	if minTtl := int64(mset.cfg.SubjectDeleteMarkerTTL.Seconds()); ttl < minTtl {
+	//		ttl = minTtl
+	//		hdr = removeHeaderIfPresent(hdr, JSMessageTTL)
+	//		hdr = genHeader(hdr, JSMessageTTL, strconv.FormatInt(ttl, 10))
+	//	}
+	//}
 
 	// Store actual msg.
 	if lseq == 0 && ts == 0 {
-		seq, ts, err = store.StoreMsg(subject, hdr, msg, ttl)
+		seq, ts, err = store.StoreMsg(subject, _hdr, msg, ttl)
 	} else {
 		// Make sure to take into account any message assignments that we had to skip (clfs).
 		seq = lseq + 1 - clfs
@@ -6031,7 +6040,7 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 		if mset.hasAllPreAcks(seq, subject) {
 			mset.clearAllPreAcks(seq)
 		}
-		err = store.StoreRawMsg(subject, hdr, msg, seq, ts, ttl)
+		err = store.StoreRawMsg(subject, _hdr, msg, seq, ts, ttl)
 	}
 
 	if err != nil {
@@ -6090,9 +6099,9 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 		mset.purgeLocked(&JSApiStreamPurgeRequest{Subject: subject, Keep: 1}, false)
 	} else if rollupAll {
 		mset.purgeLocked(&JSApiStreamPurgeRequest{Keep: 1}, false)
-	} else if scheduleNext := sliceHeader(JSScheduleNext, hdr); len(scheduleNext) > 0 && bytesToString(scheduleNext) == JSScheduleNextPurge {
+	} else if scheduleNext := idx.get(JSScheduleNext, _hdr); len(scheduleNext) > 0 && bytesToString(scheduleNext) == JSScheduleNextPurge {
 		// Purge the message schedule.
-		scheduler := getMessageScheduler(hdr)
+		scheduler := getMessageScheduler(_hdr)
 		if scheduler != _EMPTY_ {
 			mset.purgeLocked(&JSApiStreamPurgeRequest{Subject: scheduler}, false)
 		}
@@ -6107,24 +6116,24 @@ func (mset *stream) processJetStreamMsg(subject, reply string, hdr, msg []byte, 
 
 		tsStr := time.Unix(0, ts).UTC().Format(time.RFC3339Nano)
 		var rpMsg []byte
-		if len(hdr) == 0 {
+		if len(_hdr) == 0 {
 			if !thdrsOnly {
-				hdr = fmt.Appendf(nil, ht, name, subject, seq, tsStr, tlseq)
+				_hdr = fmt.Appendf(nil, ht, name, subject, seq, tsStr, tlseq)
 				rpMsg = copyBytes(msg)
 			} else {
-				hdr = fmt.Appendf(nil, htho, name, subject, seq, tsStr, tlseq, len(msg))
+				_hdr = fmt.Appendf(nil, htho, name, subject, seq, tsStr, tlseq, len(msg))
 			}
 		} else {
 			// use hdr[:end:end] to make sure as we add we copy the original hdr.
-			end := len(hdr) - LEN_CR_LF
+			end := len(_hdr) - LEN_CR_LF
 			if !thdrsOnly {
-				hdr = fmt.Appendf(hdr[:end:end], ht[hoff:], name, subject, seq, tsStr, tlseq)
+				_hdr = fmt.Appendf(_hdr[:end:end], ht[hoff:], name, subject, seq, tsStr, tlseq)
 				rpMsg = copyBytes(msg)
 			} else {
-				hdr = fmt.Appendf(hdr[:end:end], htho[hoff:], name, subject, seq, tsStr, tlseq, len(msg))
+				_hdr = fmt.Appendf(_hdr[:end:end], htho[hoff:], name, subject, seq, tsStr, tlseq, len(msg))
 			}
 		}
-		outq.send(newJSPubMsg(tsubj, _EMPTY_, _EMPTY_, hdr, rpMsg, nil, seq))
+		outq.send(newJSPubMsg(tsubj, _EMPTY_, _EMPTY_, _hdr, rpMsg, nil, seq))
 	}
 
 	// Send response here.

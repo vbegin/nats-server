@@ -28,7 +28,7 @@ func BenchmarkJsHdrSliceHeader(b *testing.B) {
 	}
 }
 
-func BenchmarkJsHdrIndex1(b *testing.B) {
+func BenchmarkJsHdrIndexStruct(b *testing.B) {
 	hdr := genHeader(nil, JSBatchId, "uuid")
 	for range b.N {
 		idx := indexJsHdr(hdr)
@@ -38,10 +38,52 @@ func BenchmarkJsHdrIndex1(b *testing.B) {
 	}
 }
 
-func BenchmarkJsHdrIndex2(b *testing.B) {
+func BenchmarkJsHdrIndexStructNone(b *testing.B) {
+	hdr := genHeader(nil, "Xats-Batch-Id", "uuid")
+	for range b.N {
+		idx := indexJsHdr(hdr)
+		for i := 0; i < 10; i++ {
+			idx.get(JSBatchId, hdr)
+		}
+	}
+}
+
+func BenchmarkJsHdrIndexStructPointer(b *testing.B) {
 	hdr := genHeader(nil, JSBatchId, "uuid")
 	for range b.N {
-		idx := indexJsHdr2(hdr)
+		idx := indexJsHdrPointer(hdr)
+		for i := 0; i < 10; i++ {
+			idx.getPointer(JSBatchId, hdr)
+		}
+		idx.returnToPool()
+	}
+}
+
+func BenchmarkJsHdrIndexStructPointerNone(b *testing.B) {
+	hdr := genHeader(nil, "Xats-Batch-Id", "uuid")
+	for range b.N {
+		idx := indexJsHdrPointer(hdr)
+		for i := 0; i < 10; i++ {
+			idx.getPointer(JSBatchId, hdr)
+		}
+		idx.returnToPool()
+	}
+}
+
+func BenchmarkJsHdrIndexMap(b *testing.B) {
+	hdr := genHeader(nil, JSBatchId, "uuid")
+	for range b.N {
+		idx := indexJsHdrMap(hdr)
+		for i := 0; i < 10; i++ {
+			idx.get(JSBatchId, hdr)
+		}
+	}
+}
+
+func BenchmarkJsHdrIndexMapNone(b *testing.B) {
+	hdr := genHeader(nil, "Xats-Batch-Id", "uuid")
+	for range b.N {
+		idx := indexJsHdrMap(hdr)
 		for i := 0; i < 10; i++ {
 			idx.get(JSBatchId, hdr)
 		}

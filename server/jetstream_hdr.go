@@ -15,6 +15,7 @@ package server
 
 import (
 	"bytes"
+	"sync"
 )
 
 type JsHdrIndex struct {
@@ -34,6 +35,10 @@ type JsHdrIndex struct {
 	schedTtl           JsHdrIndexRange
 	schedTarget        JsHdrIndexRange
 }
+
+var hdrKeys sync.Map
+
+type JsHdrIndex2 map[string]JsHdrIndexRange
 
 type JsHdrIndexRange struct {
 	start uint32
@@ -58,6 +63,10 @@ func indexJsHdr(hdr []byte) (idx JsHdrIndex) {
 			continue
 		}
 		key := hdr[offset : offset+colon]
+		if !bytes.HasPrefix(key, []byte("Nats-")) {
+			offset += colon + end + 2 // CRLF length
+			continue
+		}
 		valueStart := offset + colon + 1 // ':' length
 		// Skip over whitespace before the value.
 		for valueStart < hdrLen && hdr[valueStart] == ' ' {
@@ -144,4 +153,59 @@ func (idx JsHdrIndex) get(key string, hdr []byte) []byte {
 		return nil
 	}
 	return hdr[r.start:r.end]
+}
+
+func indexJsHdr2(hdr []byte) (idx JsHdrIndex2) {
+	hdrLen := len(hdr)
+	if hdrLen == 0 || !bytes.HasPrefix(hdr, []byte(hdrLine)) || !bytes.HasSuffix(hdr, []byte(CR_LF)) {
+		return idx
+	}
+	offset := len(hdrLine)
+	// While contains more than just CRLF.
+	for offset+2 < hdrLen {
+		colon := bytes.IndexByte(hdr[offset:], ':')
+		if colon < 0 {
+			colon = 0
+		}
+		end := bytes.Index(hdr[offset+colon:], []byte(CR_LF))
+		if colon == 0 {
+			offset += colon + end + 2 // CRLF length
+			continue
+		}
+		key := hdr[offset : offset+colon]
+		if !bytes.HasPrefix(key, []byte("Nats-")) {
+			offset += colon + end + 2 // CRLF length
+			continue
+		}
+		valueStart := offset + colon + 1 // ':' length
+		// Skip over whitespace before the value.
+		for valueStart < hdrLen && hdr[valueStart] == ' ' {
+			valueStart++
+		}
+		var r JsHdrIndexRange
+		r.start = uint32(valueStart)
+		r.end = uint32(offset + colon + end)
+		offset += colon + end + 2 // CRLF length
+
+		hdrKey, ok := hdrKeys.Load(bytesToString(key))
+		if !ok {
+			hdrKey = string(key)
+			hdrKeys.Store(hdrKey, hdrKey)
+		}
+		if idx == nil {
+			idx = make(JsHdrIndex2, 1)
+		}
+		idx[hdrKey.(string)] = r
+	}
+	return idx
+}
+
+func (idx JsHdrIndex2) get(key string, hdr []byte) []byte {
+	if r, ok := idx[key]; !ok {
+		return nil
+	} else if r.start == 0 || r.end == 0 {
+		return nil
+	} else {
+		return hdr[r.start:r.end]
+	}
 }

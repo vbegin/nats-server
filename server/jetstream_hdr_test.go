@@ -28,10 +28,20 @@ func BenchmarkJsHdrSliceHeader(b *testing.B) {
 	}
 }
 
-func BenchmarkJsHdrIndex(b *testing.B) {
+func BenchmarkJsHdrIndex1(b *testing.B) {
 	hdr := genHeader(nil, JSBatchId, "uuid")
 	for range b.N {
 		idx := indexJsHdr(hdr)
+		for i := 0; i < 10; i++ {
+			idx.get(JSBatchId, hdr)
+		}
+	}
+}
+
+func BenchmarkJsHdrIndex2(b *testing.B) {
+	hdr := genHeader(nil, JSBatchId, "uuid")
+	for range b.N {
+		idx := indexJsHdr2(hdr)
 		for i := 0; i < 10; i++ {
 			idx.get(JSBatchId, hdr)
 		}

@@ -16,6 +16,7 @@ package server
 import (
 	"bytes"
 	"sync"
+	"unique"
 )
 
 type JsHdrIndex struct {
@@ -68,7 +69,26 @@ func (idx *JsHdrIndex) returnToPool() {
 	hdrIndexPool.Put(idx)
 }
 
-var hdrKeys sync.Map
+var hdrKeysMu sync.Mutex
+var hdrKeys map[string]string
+
+var hdrIndexMapPool sync.Pool
+
+func getJsHdrIndexMapFromPool() JsHdrIndexMap {
+	idx := hdrIndexMapPool.Get()
+	if idx != nil {
+		return idx.(JsHdrIndexMap)
+	}
+	return make(JsHdrIndexMap, 1)
+}
+
+func (idx JsHdrIndexMap) returnToPool() {
+	if idx == nil {
+		return
+	}
+	clear(idx)
+	hdrIndexMapPool.Put(idx)
+}
 
 type JsHdrIndexMap map[string]JsHdrIndexRange
 
@@ -335,15 +355,27 @@ func indexJsHdrMap(hdr []byte) (idx JsHdrIndexMap) {
 		r.end = uint32(offset + colon + end)
 		offset += colon + end + 2 // CRLF length
 
-		hdrKey, ok := hdrKeys.Load(bytesToString(key))
-		if !ok {
-			hdrKey = string(key)
-			hdrKeys.Store(hdrKey, hdrKey)
-		}
+		h := unique.Make[string](bytesToString(key))
 		if idx == nil {
 			idx = make(JsHdrIndexMap, 1)
+			//idx = getJsHdrIndexMapFromPool()
 		}
-		idx[hdrKey.(string)] = r
+		idx[h.Value()] = r
+
+		//hdrKeysMu.Lock()
+		//hdrKey, ok := hdrKeys[bytesToString(key)]
+		//if !ok {
+		//	hdrKey = string(key)
+		//	if hdrKeys == nil {
+		//		hdrKeys = make(map[string]string, 1)
+		//	}
+		//	hdrKeys[hdrKey] = hdrKey
+		//}
+		//hdrKeysMu.Unlock()
+		//if idx == nil {
+		//	idx = make(JsHdrIndexMap, 1)
+		//}
+		//idx[hdrKey] = r
 	}
 	return idx
 }

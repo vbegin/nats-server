@@ -77,6 +77,7 @@ func BenchmarkJsHdrIndexMap(b *testing.B) {
 		for i := 0; i < 10; i++ {
 			idx.get(JSBatchId, hdr)
 		}
+		//idx.returnToPool()
 	}
 }
 
@@ -87,5 +88,6 @@ func BenchmarkJsHdrIndexMapNone(b *testing.B) {
 		for i := 0; i < 10; i++ {
 			idx.get(JSBatchId, hdr)
 		}
+		//idx.returnToPool()
 	}
 }
